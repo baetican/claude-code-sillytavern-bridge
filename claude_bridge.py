@@ -3876,17 +3876,11 @@ Now, based on this context, please respond to the following request:
         # stop burning model time on a response nobody will read.
         #
         # Two output shapes:
-        #   - stream=True (and no tool calls): SSE event stream — keepalive
-        #     is `: keepalive\n\n` (an SSE comment), final payload is one
-        #     content chunk + stop chunk + [DONE].
-        #   - otherwise (non-stream, or any tool-call response): JSON object.
-        #     Keepalive is " " (a JSON-spec-legal leading whitespace that
-        #     every mainstream parser tolerates), final payload is the full
-        #     chat.completion object.
-        #
-        # Tool calls always go through the JSON branch — OpenAI's SSE shape
-        # for tool_calls is finicky and we're not trying to look like a real
-        # streaming endpoint anyway.
+        #   - stream=True: SSE event stream — keepalive is an empty-delta
+        #     SSE data event, final payload is content chunk + stop/tool_calls
+        #     chunk + [DONE].
+        #   - stream=False: JSON object. Keepalive is " " (a JSON-spec-legal
+        #     leading whitespace), final payload is the full chat.completion.
         process_holder = {}
         result_holder = {}
 
@@ -3944,29 +3938,60 @@ Now, based on this context, please respond to the following request:
                 response_id = f"chatcmpl-{uuid.uuid4().hex[:8]}"
 
                 if tool_calls:
-                    # Tool-call responses always serialize as JSON regardless
-                    # of the stream flag (see comment above).
-                    log(f"Returning {len(tool_calls)} tool call(s) to SillyTavern")
+                    log(f"Returning {len(tool_calls)} tool call(s) ({'SSE' if as_sse else 'JSON'})")
                     for tc in tool_calls:
                         log(f"  Tool: {tc['function']['name']} | ID: {tc['id']}")
                         log(f"  Args: {tc['function']['arguments'][:200]}...")
-
-                    message = {
-                        "role": "assistant",
-                        "content": response_text if response_text else "",
-                        "tool_calls": tool_calls,
-                    }
-                    response_obj = {
-                        "id": response_id,
-                        "object": "chat.completion",
-                        "created": int(time.time()),
-                        "model": DEFAULT_MODEL,
-                        "choices": [{"index": 0, "message": message, "finish_reason": "stop"}],
-                        "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
-                    }
-                    log(f"Tool call response JSON: {json.dumps(response_obj)[:500]}...")
                     trigger_lorebook_analysis(messages)
-                    yield json.dumps(response_obj)
+
+                    if as_sse:
+                        created = int(time.time())
+                        if response_text:
+                            content_chunk = {
+                                "id": response_id,
+                                "object": "chat.completion.chunk",
+                                "created": created,
+                                "model": DEFAULT_MODEL,
+                                "choices": [{"index": 0, "delta": {"role": "assistant", "content": response_text}, "finish_reason": None}],
+                            }
+                            yield f"data: {json.dumps(content_chunk)}\n\n"
+                        delta_tool_calls = [
+                            {
+                                "index": i,
+                                "id": tc["id"],
+                                "type": "function",
+                                "function": {
+                                    "name": tc["function"]["name"],
+                                    "arguments": tc["function"]["arguments"],
+                                },
+                            }
+                            for i, tc in enumerate(tool_calls)
+                        ]
+                        tool_chunk = {
+                            "id": response_id,
+                            "object": "chat.completion.chunk",
+                            "created": created,
+                            "model": DEFAULT_MODEL,
+                            "choices": [{"index": 0, "delta": {"tool_calls": delta_tool_calls}, "finish_reason": "tool_calls"}],
+                        }
+                        yield f"data: {json.dumps(tool_chunk)}\n\n"
+                        yield "data: [DONE]\n\n"
+                    else:
+                        message = {
+                            "role": "assistant",
+                            "content": response_text if response_text else "",
+                            "tool_calls": tool_calls,
+                        }
+                        response_obj = {
+                            "id": response_id,
+                            "object": "chat.completion",
+                            "created": int(time.time()),
+                            "model": DEFAULT_MODEL,
+                            "choices": [{"index": 0, "message": message, "finish_reason": "tool_calls"}],
+                            "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+                        }
+                        log(f"Tool call response JSON: {json.dumps(response_obj)[:500]}...")
+                        yield json.dumps(response_obj)
                     return
 
                 if json_schema is not None:
