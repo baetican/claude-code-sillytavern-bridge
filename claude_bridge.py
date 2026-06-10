@@ -2783,6 +2783,19 @@ Push boundaries. Be unpredictable, experimental, and bold. Take dramatic narrati
                 or DEFAULT_NO_THINKING_PROMPT
             )
 
+        # When tools are present, the narrative mandate must not override an
+        # explicit tool-call instruction (e.g. the hidden image agent saying
+        # "You MUST call generate_image immediately"). Add an exception so
+        # the model knows a [TOOL_CALL] block alone is a complete response.
+        if tools:
+            response_section += (
+                "\n\nTOOL-CALL EXCEPTION: If you are explicitly instructed to "
+                "call a specific tool (e.g. 'You MUST call X', 'call the X tool "
+                "immediately', 'call X now'), output ONLY the [TOOL_CALL] block "
+                "as your complete response — narrative prose is NOT required. "
+                "The [TOOL_CALL] block alone is a valid, complete response."
+            )
+
         # Include full system prompt in the conversation
         prompt = f"""=== SYSTEM PROMPT (FOLLOW EXACTLY) ===
 
