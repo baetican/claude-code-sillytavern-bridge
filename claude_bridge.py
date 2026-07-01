@@ -1916,9 +1916,10 @@ runtime_settings = {
     "debug_output": DEBUG_RAW_OUTPUT,
     # Simple chunking toggle (one-shot)
     "chunking_enabled": False,
-    # Model selection: "opus" (latest), "claude-opus-4-8", "claude-opus-4-6", or "sonnet"
-    # Note: 4.7 was deprecated and is no longer available
-    "model": "opus",
+    # Model selection: full model name, e.g. "claude-opus-4-8", "claude-opus-4-7",
+    # "claude-opus-4-6", "claude-sonnet-5", "claude-sonnet-4-6", "claude-sonnet-4-5",
+    # or "claude-fable-5". Also accepts the CLI aliases "opus" / "sonnet" / "fable".
+    "model": "claude-opus-4-8",
     # Tool calling support for extensions like TunnelVision
     "tool_calling_enabled": True,
     # Auto-summary settings
@@ -2946,7 +2947,7 @@ Use the Read tool to view each, then weave the visual details into your scene wi
     # users can leave effort at max globally without silently breaking
     # every Sonnet request.
     effort = runtime_settings["effort_level"]
-    if runtime_settings["model"] == "sonnet" and effort in ("high", "xhigh", "max"):
+    if "sonnet" in runtime_settings["model"] and effort in ("high", "xhigh", "max"):
         log(f"Clamping effort {effort} → medium (Sonnet produces no narrative above medium)", "WARN")
         effort = "medium"
 
