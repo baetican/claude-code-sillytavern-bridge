@@ -899,9 +899,10 @@
                     <p style="color:var(--paper-faint);font-size:12px;margin-bottom:10px;">Opus = most capable · Sonnet = fastest · Fable = experimental</p>
                     <select id="modelSelect" data-setting="model" style="width:100%;padding:8px 10px;background:var(--ink-sunk);border:1px solid var(--rule);color:var(--paper);font-family:var(--font-mono);font-size:13px;">
                         <optgroup label="Opus">
-                            <option value="claude-opus-4-8" selected>Opus 4.8 (latest)</option>
+                            <option value="claude-opus-5">Opus 5 (latest)</option>
+                            <option value="claude-opus-4-8">Opus 4.8</option>
                             <option value="claude-opus-4-7">Opus 4.7 (deprecated)</option>
-                            <option value="claude-opus-4-6">Opus 4.6</option>
+                            <option value="claude-opus-4-6" selected>Opus 4.6 (default)</option>
                         </optgroup>
                         <optgroup label="Sonnet">
                             <option value="claude-sonnet-5">Sonnet 5 (latest)</option>
@@ -2618,7 +2619,7 @@ Common subject fields: subject, character, npc, entity, name.' style="width:100%
 
         function updateEffortAvailability() {
             const modelSelect = document.getElementById('modelSelect');
-            const model = modelSelect ? modelSelect.value : 'claude-opus-4-8';
+            const model = modelSelect ? modelSelect.value : 'claude-opus-4-6';
             const isSonnet = model.includes('sonnet');
 
             // Toggle disabled state on the high/xhigh/max buttons.
@@ -2843,8 +2844,21 @@ Common subject fields: subject, character, npc, entity, name.' style="width:100%
                 const settings = await response.json();
 
                 // Apply settings to UI
+                // The dropdown is the model whitelist, but the backend will run
+                // whatever string is in bridge_settings.json (hand-edited, or set
+                // by an older/newer build). Never silently show a different model
+                // than the one the backend is using — the next auto-save would
+                // then overwrite the backend's real setting with what's displayed.
+                // Surface the unknown value as a real option instead.
                 const modelSelect = document.getElementById('modelSelect');
-                if (settings.model && [...modelSelect.options].some(o => o.value === settings.model)) {
+                if (settings.model) {
+                    if (![...modelSelect.options].some(o => o.value === settings.model)) {
+                        console.warn(`Model "${settings.model}" is not in the dropdown; adding it so the UI matches the backend.`);
+                        const opt = document.createElement('option');
+                        opt.value = settings.model;
+                        opt.textContent = `${settings.model} (unrecognized)`;
+                        modelSelect.appendChild(opt);
+                    }
                     modelSelect.value = settings.model;
                 }
                 document.querySelectorAll('[data-setting="effort"]').forEach(btn => {

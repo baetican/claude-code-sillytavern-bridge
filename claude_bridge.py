@@ -1783,7 +1783,11 @@ CORS(app)  # Enable CORS for SillyTavern
 # CONFIGURATION - Edit these settings as needed
 # =============================================================================
 
-DEFAULT_MODEL = "claude-opus-4-8"  # Model name to report
+# Model name reported to clients (/v1/models, response payloads). Cosmetic —
+# the model actually invoked is runtime_settings["model"], set via the GUI.
+# Held at Opus 4.6: newer Opus versions lead it on most axes but not on prose,
+# and this bridge is a creative-writing tool first.
+DEFAULT_MODEL = "claude-opus-4-6"
 
 # Default bridge system prompt. Single source of truth for both the request
 # handler (via runtime_settings.system_prompt_override fallback) and the GUI
@@ -1891,8 +1895,8 @@ FORMAT CONSISTENCY: match the styling, length, and pacing of recent assistant tu
 
 
 # Effort level: "low", "medium", "high", "xhigh", or "max"
-# xhigh and max require Opus 4.7; on older models Claude Code falls back
-# to the highest supported level at or below the requested one.
+# xhigh and max require Opus 4.7 or newer; on older models Claude Code falls
+# back to the highest supported level at or below the requested one.
 EFFORT_LEVEL = "high"
 
 # Show thinking in console output
@@ -1916,10 +1920,13 @@ runtime_settings = {
     "debug_output": DEBUG_RAW_OUTPUT,
     # Simple chunking toggle (one-shot)
     "chunking_enabled": False,
-    # Model selection: full model name, e.g. "claude-opus-4-8", "claude-opus-4-7",
-    # "claude-opus-4-6", "claude-sonnet-5", "claude-sonnet-4-6", "claude-sonnet-4-5",
-    # or "claude-fable-5". Also accepts the CLI aliases "opus" / "sonnet" / "fable".
-    "model": "claude-opus-4-8",
+    # Model selection: full model name, e.g. "claude-opus-5", "claude-opus-4-8",
+    # "claude-opus-4-7", "claude-opus-4-6", "claude-sonnet-5", "claude-sonnet-4-6",
+    # "claude-sonnet-4-5", or "claude-fable-5". Also accepts the CLI aliases
+    # "opus" / "sonnet" / "fable". The GUI dropdown in templates/index.html is the
+    # effective whitelist, but any string here is passed straight to --model.
+    # Defaults to Opus 4.6 for prose quality rather than to the newest Opus.
+    "model": "claude-opus-4-6",
     # Tool calling support for extensions like TunnelVision
     "tool_calling_enabled": True,
     # Auto-summary settings
