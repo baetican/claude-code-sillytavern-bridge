@@ -41,7 +41,6 @@
     .row label span { display: block; }
     h2, .h2 { font-size: 13px; font-family: var(--font-mono); font-weight: 500; text-transform: uppercase; letter-spacing: 0.08em; color: var(--paper-dim); margin: 0 0 4px; }
     .hint { color: var(--paper-faint); font-size: 13px; margin: 0 0 12px; }
-    .note { color: var(--warn); font-size: 12px; margin: 10px 0 0; }
     select, input[type="number"], textarea {
         width: 100%;
         padding: 8px 10px;
@@ -63,9 +62,8 @@
         font-size: 12px;
         cursor: pointer;
     }
-    button:hover:not(:disabled) { color: var(--paper); border-color: var(--paper-faint); }
+    button:hover { color: var(--paper); border-color: var(--paper-faint); }
     button.active { background: var(--accent); border-color: var(--accent); color: var(--paper); }
-    button:disabled { opacity: 0.35; cursor: not-allowed; }
     button.primary { border-color: var(--accent); color: var(--paper); }
     .row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 8px 0; }
     .row + .row { border-top: 1px solid var(--rule); }
@@ -104,7 +102,8 @@
                 <option value="claude-opus-4-6">Opus 4.6 (default)</option>
             </optgroup>
             <optgroup label="Sonnet">
-                <option value="claude-sonnet-5">Sonnet 5 (latest)</option>
+                <option value="claude-sonnet-5-5">Sonnet 5.5 (latest)</option>
+                <option value="claude-sonnet-5">Sonnet 5</option>
                 <option value="claude-sonnet-4-6">Sonnet 4.6</option>
                 <option value="claude-sonnet-4-5">Sonnet 4.5</option>
             </optgroup>
@@ -125,7 +124,6 @@
             <button data-value="xhigh">xHigh</button>
             <button data-value="max">Max</button>
         </div>
-        <p class="note" id="sonnetNote" hidden>Sonnet is capped at Medium: above that it returns thinking only, or nothing.</p>
     </section>
 
     <section>
@@ -170,7 +168,6 @@
 <div id="toast"></div>
 
 <script>
-    const SONNET_BLOCKED = new Set(['high', 'xhigh', 'max']);
     const $ = id => document.getElementById(id);
     let settings = {};
     let toastTimer;
@@ -215,12 +212,9 @@
     }
 
     function renderEffort() {
-        const isSonnet = settings.model.includes('sonnet');
         document.querySelectorAll('#effort button').forEach(btn => {
-            btn.disabled = isSonnet && SONNET_BLOCKED.has(btn.dataset.value);
             btn.classList.toggle('active', btn.dataset.value === settings.effort_level);
         });
-        $('sonnetNote').hidden = !isSonnet;
     }
 
     function renderPromptDirty() {
@@ -238,12 +232,8 @@
         $('port').value = settings.bridge_port;
     }
 
-    $('model').addEventListener('change', async e => {
-        const patch = { model: e.target.value };
-        if (patch.model.includes('sonnet') && SONNET_BLOCKED.has(settings.effort_level)) {
-            patch.effort_level = 'medium';
-        }
-        if (await save(patch, `Model: ${patch.model}`)) renderEffort();
+    $('model').addEventListener('change', e => {
+        save({ model: e.target.value }, `Model: ${e.target.value}`);
     });
 
     document.querySelectorAll('#effort button').forEach(btn => {

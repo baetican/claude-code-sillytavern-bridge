@@ -7,15 +7,14 @@ Each request is translated into a `claude -p` call. The bridge handles:
 - `/v1/chat/completions`, JSON or SSE (`stream: true`). The CLI doesn't stream tokens, so the full response arrives at the end; empty keepalive chunks are sent every second until then.
 - Tool calling, by describing OpenAI tool definitions in the prompt and parsing `[TOOL_CALL]` blocks back into `tool_calls`.
 - `response_format` (`json_object` / `json_schema`), passed through to the CLI's `--json-schema`.
-- Images: shared images are described in a separate pass so the main turn keeps its formatting.
-- CLI session reuse: follow-up turns resume the previous CLI session and send only the new message, keeping the prompt cache warm. Swipes and edits start a fresh session.
+- Images: base64 images from the last few messages are passed to the model as image blocks via the CLI's stream-json input.
+- CLI session reuse: each reply's CLI session is saved; when the next request continues from that reply, only the new turn is sent with `--resume`, keeping the prompt cache warm. Swipes and recent edits start a fresh session.
 - Cancelling the Claude subprocess when the client disconnects.
 
 ## Requirements
 
 - Python 3.10+
 - [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code), installed and logged in (`claude --version` works)
-- Optional: `pip install pillow` for animated-GIF frame extraction
 
 ## Run
 
