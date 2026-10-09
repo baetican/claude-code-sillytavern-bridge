@@ -2,6 +2,7 @@
 bridge_settings.json
 cache/
 temp_images/
+logs/
 character_memory/
 
 # Claude Code's local session state (should never be committed)

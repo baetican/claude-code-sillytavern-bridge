@@ -72,6 +72,45 @@ def log_box(title: str, stats: dict):
 
 
 # =============================================================================
+# PROMPT LOGGING (--debug)
+# =============================================================================
+# With --debug, every prompt handed to the CLI is written to its own file in
+# logs/ so the exact system prompt and message can be inspected.
+
+DEBUG_PROMPTS = "--debug" in sys.argv[1:]
+LOGS_DIR = os.path.join(BASE_DIR, "logs")
+
+
+def write_prompt_log(cmd: list, system_prompt: str, content: list, resumed_session=None):
+    # Microseconds keep concurrent requests from sharing a file.
+    path = os.path.join(LOGS_DIR, f"prompt{datetime.now().strftime('%Y%m%d-%H%M%S-%f')}.log")
+    parts = []
+    for block in content:
+        if block["type"] == "text":
+            parts.append(block["text"])
+        else:
+            src = block["source"]
+            parts.append(f"[IMAGE: {src['media_type']}, {len(src['data']) * 3 // 4 // 1024} KB]\n")
+    resume_note = (
+        f"Resumed CLI session {resumed_session}. The model also sees that session's "
+        "earlier history; only the new turn below was sent."
+        if resumed_session else "Fresh CLI session; the message below is the full prompt."
+    )
+    try:
+        os.makedirs(LOGS_DIR, exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(f"Time:    {datetime.now().isoformat(timespec='seconds')}\n")
+            f.write(f"Command: {subprocess.list2cmdline(cmd)}\n")
+            f.write(f"Mode:    {resume_note}\n\n")
+            f.write("=" * 30 + " SYSTEM PROMPT (--system-prompt-file) " + "=" * 30 + "\n\n")
+            f.write(system_prompt + "\n\n")
+            f.write("=" * 30 + " USER MESSAGE (stdin) " + "=" * 30 + "\n\n")
+            f.write("".join(parts) + "\n")
+    except OSError as e:
+        log(f"Could not write prompt log {path}: {e}", "WARN")
+
+
+# =============================================================================
 # CLAUDE CLI RESOLUTION
 # =============================================================================
 
@@ -484,14 +523,17 @@ def call_claude(messages: list, tools=None, json_schema=None, process_holder: di
     # Passed as a file because Windows caps the command line at ~32K chars.
     # It must be re-sent on --resume: the CLI rebuilds the system prompt from
     # flags each invocation, and identical bytes keep the prompt cache warm.
+    system_prompt = runtime_settings["system_prompt"].strip() or DEFAULT_SYSTEM_PROMPT
     sp_file = tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", suffix=".txt", delete=False)
     try:
-        sp_file.write(runtime_settings["system_prompt"].strip() or DEFAULT_SYSTEM_PROMPT)
+        sp_file.write(system_prompt)
     finally:
         sp_file.close()
     cmd += ["--system-prompt-file", sp_file.name]
 
     stdin_payload = json.dumps({"type": "user", "message": {"role": "user", "content": content}}) + "\n"
+    if DEBUG_PROMPTS:
+        write_prompt_log(cmd, system_prompt, content, entry["session_id"] if entry else None)
 
     log(f"Calling Claude ({model}, effort={effort}{', resumed' if entry else ''})...")
     start = time.time()
@@ -799,5 +841,7 @@ if __name__ == "__main__":
     print(f"  {Colors.DIM}Effort:{Colors.RESET}   {Colors.GREEN}{runtime_settings['effort_level']}{Colors.RESET}")
     print(f"  {Colors.CYAN}API URL:{Colors.RESET}  http://localhost:{port}/v1")
     print(f"  {Colors.CYAN}Settings:{Colors.RESET} http://localhost:{port}/")
+    if DEBUG_PROMPTS:
+        print(f"  {Colors.YELLOW}Debug:{Colors.RESET}    prompts logged to {LOGS_DIR}")
     print()
     app.run(host="0.0.0.0", port=port, debug=False, threaded=True)

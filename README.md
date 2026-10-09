@@ -26,6 +26,8 @@ or `pip install -r requirements.txt` then `python claude_bridge.py`.
 
 The settings page is at `http://localhost:5001/`. It covers model, effort, the bridge system prompt, tool calling, session reuse, debug logging and port. Changes apply to the next request, except the port, which needs a restart. Settings are saved to `bridge_settings.json`.
 
+To see exactly what the model gets, launch with `--debug` (`run_bridge.bat --debug` or `python claude_bridge.py --debug`). Each request then writes `logs/prompt<timestamp>.log`, which holds the CLI command, the system prompt and the full user message. Images are shown as placeholders.
+
 ## Client setup
 
 In SillyTavern: **API Connections → Chat Completion → Custom (OpenAI-compatible)**, endpoint `http://localhost:5001/v1`, any non-empty API key. The client's model selection is ignored; pick the model on the bridge settings page.
