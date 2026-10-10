@@ -514,6 +514,9 @@ def call_claude(messages: list, tools=None, json_schema=None, process_holder: di
         "--model", model,
         "--effort", effort,
         "--tools", "",
+        # Skips CLAUDE.md, auto-memory, skills, plugins and MCP servers, which
+        # the CLI would otherwise inject into every roleplay prompt.
+        "--safe-mode",
     ]
     if json_schema is not None:
         cmd += ["--json-schema", json.dumps(json_schema, separators=(",", ":"))]
