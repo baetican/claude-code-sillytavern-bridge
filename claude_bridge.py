@@ -143,10 +143,8 @@ DEFAULT_SYSTEM_PROMPT = (
 
 EFFORT_LEVELS = ("low", "medium", "high", "xhigh", "max")
 
-# Opus 4.6 is the deliberate default: it's the strongest for prose even though
-# newer versions lead elsewhere.
 DEFAULT_SETTINGS = {
-    "model": "claude-opus-4-6",
+    "model": "claude-opus-5-5",
     "effort_level": "high",
     "system_prompt": "",
     "tool_calling_enabled": True,
@@ -189,6 +187,76 @@ load_settings()
 def debug(message: str, level: str = "INFO"):
     if runtime_settings["debug_output"]:
         log(message, level)
+
+
+# =============================================================================
+# MODEL LIST
+# =============================================================================
+# The settings page's model picker comes from the local CLI: the initialize
+# control request (what the Agent SDK's supportedModels() uses) returns the
+# models this CLI version and account can run. It isn't a documented CLI
+# interface, so a small built-in list stands in if it fails.
+
+FALLBACK_MODELS = [
+    {"id": "claude-opus-5-5", "name": "Opus 5.5", "effort_levels": list(EFFORT_LEVELS)},
+    {"id": "claude-sonnet-5-5", "name": "Sonnet 5.5", "effort_levels": list(EFFORT_LEVELS)},
+    {"id": "claude-fable-5-1", "name": "Fable 5.1", "effort_levels": list(EFFORT_LEVELS)},
+]
+
+_models_cache = None
+_models_lock = threading.Lock()
+
+
+def fetch_cli_models() -> list:
+    request_line = json.dumps({"type": "control_request", "request_id": "models",
+                               "request": {"subtype": "initialize"}}) + "\n"
+    proc = subprocess.run(
+        [CLAUDE_EXE, "-p", "--input-format", "stream-json", "--output-format", "stream-json",
+         "--verbose", "--safe-mode"],
+        input=request_line, capture_output=True, text=True, encoding="utf-8", timeout=60, cwd=BASE_DIR,
+    )
+    for line in proc.stdout.splitlines():
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if event.get("type") != "control_response":
+            continue
+        entries = event["response"]["response"]["models"]
+        # The newest models only appear as aliases ("opus", "sonnet", ...).
+        # Each is listed under the ID it resolves to, since an alias moves to a
+        # new model on release and a saved choice would change underneath the
+        # user. "default" goes last so its "Default (recommended)" name loses
+        # to the family alias that resolves to the same model.
+        models = {}
+        for m in sorted(entries, key=lambda m: m.get("value") == "default"):
+            model_id = m.get("resolvedModel") or m["value"]
+            if model_id in models:
+                continue
+            name = m.get("displayName") if m.get("value") != "default" else None
+            models[model_id] = {
+                "id": model_id, "name": name or model_id,
+                "description": m.get("description", ""),
+                "effort_levels": m.get("supportedEffortLevels", []),
+            }
+        return list(models.values())
+    raise RuntimeError(f"no initialize response (exit {proc.returncode}): {proc.stderr.strip()[:200]}")
+
+
+def get_models(refresh: bool = False) -> dict:
+    global _models_cache
+    with _models_lock:
+        if _models_cache is None or refresh:
+            try:
+                models = fetch_cli_models()
+                if not models:
+                    raise RuntimeError("CLI returned an empty model list")
+                _models_cache = {"source": "cli", "models": models}
+                debug(f"Loaded {len(models)} models from the CLI")
+            except (OSError, subprocess.SubprocessError, RuntimeError, KeyError, TypeError) as e:
+                log(f"Could not load models from the CLI, using built-in list: {e}", "WARN")
+                _models_cache = {"source": "fallback", "error": str(e), "models": FALLBACK_MODELS}
+        return {**_models_cache, "default": DEFAULT_SETTINGS["model"]}
 
 
 # =============================================================================
@@ -787,6 +855,11 @@ def health():
     return jsonify({"status": "ok", "model": runtime_settings["model"], "effort_level": runtime_settings["effort_level"]})
 
 
+@app.route("/api/models", methods=["GET"])
+def api_models():
+    return jsonify(get_models(refresh=request.args.get("refresh") == "1"))
+
+
 @app.route("/api/settings", methods=["GET"])
 def get_settings():
     return jsonify({**runtime_settings, "default_system_prompt": DEFAULT_SYSTEM_PROMPT})
@@ -832,4 +905,6 @@ if __name__ == "__main__":
     if DEBUG_REQUESTS:
         print(f"  {Colors.YELLOW}Debug:{Colors.RESET}    requests logged to {LOGS_DIR}")
     print()
+    # Warm the model list so the settings page doesn't wait on the CLI.
+    threading.Thread(target=get_models, daemon=True).start()
     app.run(host="0.0.0.0", port=port, debug=False, threaded=True)

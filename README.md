@@ -24,7 +24,7 @@ run_bridge.bat
 
 or `pip install -r requirements.txt` then `python claude_bridge.py`.
 
-The settings page is at `http://localhost:5001/`. It covers model, effort, the bridge system prompt, tool calling, session reuse, debug logging and port. Changes apply to the next request, except the port, which needs a restart. Settings are saved to `bridge_settings.json`.
+The settings page is at `http://localhost:5001/`. It covers model, effort, the bridge system prompt, tool calling, session reuse, debug logging and port. The model list is read from the local Claude Code CLI at startup (Refresh re-reads it), so it shows whatever models your CLI version and account can use; effort levels a model doesn't support are greyed out. The default model is Opus 5.5. Changes apply to the next request, except the port, which needs a restart. Settings are saved to `bridge_settings.json`.
 
 To see exactly what your client sends, launch with `--debug` (`run_bridge.bat --debug` or `python claude_bridge.py --debug`). Each request then writes its JSON body, pretty-printed, to `logs/request<timestamp>.log`. Base64 image data is shortened to a length note.
 

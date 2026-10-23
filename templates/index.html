@@ -65,6 +65,11 @@
     button:hover { color: var(--paper); border-color: var(--paper-faint); }
     button.active { background: var(--accent); border-color: var(--accent); color: var(--paper); }
     button.primary { border-color: var(--accent); color: var(--paper); }
+    button:disabled { opacity: 0.35; cursor: not-allowed; }
+    button:disabled:hover { color: var(--paper-dim); border-color: var(--rule); }
+    .model-row { display: flex; gap: 8px; }
+    .model-row button { flex-shrink: 0; }
+    .hint.note { margin: 10px 0 0; color: var(--warn); }
     .row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 8px 0; }
     .row + .row { border-top: 1px solid var(--rule); }
     .row label { cursor: pointer; }
@@ -92,26 +97,12 @@
 
     <section>
         <h2>Model</h2>
-        <p class="hint">Applies to the next request. The model sent by the client is ignored.</p>
-        <select id="model">
-            <optgroup label="Opus">
-                <option value="claude-opus-5-5">Opus 5.5 (latest)</option>
-                <option value="claude-opus-5">Opus 5</option>
-                <option value="claude-opus-4-8">Opus 4.8</option>
-                <option value="claude-opus-4-7">Opus 4.7 (deprecated)</option>
-                <option value="claude-opus-4-6">Opus 4.6 (default)</option>
-            </optgroup>
-            <optgroup label="Sonnet">
-                <option value="claude-sonnet-5-5">Sonnet 5.5 (latest)</option>
-                <option value="claude-sonnet-5">Sonnet 5</option>
-                <option value="claude-sonnet-4-6">Sonnet 4.6</option>
-                <option value="claude-sonnet-4-5">Sonnet 4.5</option>
-            </optgroup>
-            <optgroup label="Fable">
-                <option value="claude-fable-5-1">Fable 5.1 (latest)</option>
-                <option value="claude-fable-5">Fable 5</option>
-            </optgroup>
-        </select>
+        <p class="hint">Applies to the next request. The model sent by the client is ignored. The list comes from the Claude Code CLI on this machine.</p>
+        <div class="model-row">
+            <select id="model"></select>
+            <button id="refreshModels" title="Ask the CLI for its model list again">Refresh</button>
+        </div>
+        <p class="hint note" id="modelNote" hidden></p>
     </section>
 
     <section>
@@ -124,6 +115,7 @@
             <button data-value="xhigh">xHigh</button>
             <button data-value="max">Max</button>
         </div>
+        <p class="hint note" id="effortNote" hidden></p>
     </section>
 
     <section>
@@ -170,7 +162,10 @@
 <script>
     const $ = id => document.getElementById(id);
     let settings = {};
+    let models = { models: [], pending: true };
     let toastTimer;
+
+    const FAMILIES = ['opus', 'sonnet', 'fable', 'haiku'];
 
     function toast(message, isError = false) {
         const el = $('toast');
@@ -200,21 +195,80 @@
         }
     }
 
+    // claude-opus-4-6 -> ['opus', [4, 6]]; the date suffix on older IDs
+    // (claude-haiku-4-5-20251001) is ignored.
+    function parseModelId(id) {
+        const m = /^claude-([a-z]+)-(\d+)(?:-(\d{1,2}))?(?:-|$)/.exec(id);
+        return m ? [m[1], [Number(m[2]), Number(m[3] || 0)]] : ['other', [0, 0]];
+    }
+
     function renderModel() {
         const select = $('model');
+        select.replaceChildren();
+        const groups = new Map();
+        for (const m of models.models) {
+            const [family, version] = parseModelId(m.id);
+            if (!groups.has(family)) groups.set(family, []);
+            groups.get(family).push({ ...m, version });
+        }
+        const rank = f => (FAMILIES.indexOf(f) + 1) || FAMILIES.length + 1;
+        [...groups.keys()].sort((a, b) => rank(a) - rank(b)).forEach(family => {
+            const group = document.createElement('optgroup');
+            group.label = family === 'other' ? 'Other' : family[0].toUpperCase() + family.slice(1);
+            groups.get(family)
+                .sort((a, b) => b.version[0] - a.version[0] || b.version[1] - a.version[1])
+                .forEach(m => {
+                    const opt = new Option(m.id === models.default ? `${m.name} (default)` : m.name, m.id);
+                    opt.title = `${m.id}${m.description ? ' · ' + m.description : ''}`;
+                    group.append(opt);
+                });
+            select.append(group);
+        });
         // Keep an unknown saved model visible instead of silently showing the
         // default while the backend runs something else.
-        if (![...select.options].some(o => o.value === settings.model)) {
-            const opt = new Option(`${settings.model} (unrecognized)`, settings.model);
-            select.add(opt, 0);
+        if (settings.model && ![...select.options].some(o => o.value === settings.model)) {
+            select.add(new Option(models.pending ? settings.model : `${settings.model} (unrecognized)`, settings.model), 0);
         }
         select.value = settings.model;
+
+        const note = $('modelNote');
+        note.hidden = models.source !== 'fallback';
+        note.textContent = `Couldn't read the model list from the CLI, showing a built-in list instead (${models.error}).`;
+    }
+
+    function currentEffortLevels() {
+        const m = models.models.find(m => m.id === settings.model);
+        return m ? m.effort_levels : null;
     }
 
     function renderEffort() {
+        const levels = currentEffortLevels();
         document.querySelectorAll('#effort button').forEach(btn => {
             btn.classList.toggle('active', btn.dataset.value === settings.effort_level);
+            btn.disabled = !!levels && levels.length > 0 && !levels.includes(btn.dataset.value);
         });
+        const note = $('effortNote');
+        if (levels && levels.length === 0) {
+            note.textContent = 'This model has no effort setting; the choice here is ignored.';
+        } else if (levels && !levels.includes(settings.effort_level)) {
+            note.textContent = `This model doesn't list ${settings.effort_level}. The CLI accepts it, but may not apply it as-is.`;
+        } else {
+            note.textContent = '';
+        }
+        note.hidden = !note.textContent;
+    }
+
+    async function loadModels(refresh = false) {
+        try {
+            const res = await fetch(`/api/models${refresh ? '?refresh=1' : ''}`);
+            if (!res.ok) throw new Error(res.statusText);
+            models = await res.json();
+            if (refresh) toast(models.source === 'cli' ? `Loaded ${models.models.length} models` : 'CLI unavailable, using built-in list', models.source !== 'cli');
+        } catch (e) {
+            toast(`Could not load models: ${e.message}`, true);
+        }
+        renderModel();
+        renderEffort();
     }
 
     function renderPromptDirty() {
@@ -232,8 +286,15 @@
         $('port').value = settings.bridge_port;
     }
 
-    $('model').addEventListener('change', e => {
-        save({ model: e.target.value }, `Model: ${e.target.value}`);
+    $('model').addEventListener('change', async e => {
+        if (await save({ model: e.target.value }, `Model: ${e.target.value}`)) renderEffort();
+    });
+
+    $('refreshModels').addEventListener('click', async () => {
+        const btn = $('refreshModels');
+        btn.disabled = true;
+        await loadModels(true);
+        btn.disabled = false;
     });
 
     document.querySelectorAll('#effort button').forEach(btn => {
@@ -289,6 +350,7 @@
         } catch {
             toast('Could not load settings', true);
         }
+        loadModels();
         checkHealth();
         setInterval(checkHealth, 10000);
     })();
